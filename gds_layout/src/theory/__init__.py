@@ -1,0 +1,1 @@
+# Theory calculation module for MEMS IMU design 
