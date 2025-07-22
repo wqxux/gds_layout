@@ -10,7 +10,7 @@ import os
 # 设置环境变量来避免NumPy 2.0兼容性问题
 os.environ['NUMPY_EXPERIMENTAL_ARRAY_FUNCTION'] = '0'
 
-# 添加src目录到Python路径
+# 添加src目录到Python路径，以便导入自定义模块
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from theory.imu_theory import IMUTheoryCalculator, IMUPerformanceParams
@@ -91,24 +91,30 @@ def create_consumer_accelerometer():
     # 7. 计算设计指标
     print("\n=== 设计指标 ===")
     
-    # 质量块面积
+    # 质量块面积 (μm²)
     proof_mass_area = mask_params["proof_mass_size"] ** 2
     print(f"质量块面积: {proof_mass_area:.0f} μm²")
     
-    # 弹簧刚度
-    spring_stiffness = 4 * 169e9 * (mask_params["spring_width"] * 50**3 / 12) / mask_params["spring_length"]**3
+    # 弹簧刚度 (N/m) - 确保单位转换正确
+    silicon_youngs_modulus_Pa = calculator.silicon.youngs_modulus * 1e9 # GPa to Pa
+    silicon_thickness_m = calculator.silicon.thickness * 1e-6 # μm to m
+    spring_width_m = mask_params["spring_width"] * 1e-6 # μm to m
+    spring_length_m = mask_params["spring_length"] * 1e-6 # μm to m
+    
+    I_m4 = spring_width_m * silicon_thickness_m**3 / 12 # 惯性矩 (m^4)
+    spring_stiffness = 4 * silicon_youngs_modulus_Pa * I_m4 / spring_length_m**3 # 总刚度 (N/m)
     print(f"弹簧刚度: {spring_stiffness:.2e} N/m")
     
-    # 自然频率
+    # 自然频率 (Hz)
     natural_freq = calculator.calculate_natural_frequency(
         mask_params["proof_mass_size"],
         mask_params["spring_length"],
         mask_params["spring_width"],
-        50.0
+        calculator.silicon.thickness # 传递微米单位的厚度
     )
     print(f"自然频率: {natural_freq:.1f} Hz")
     
-    # 吸合电压
+    # 吸合电压 (V)
     pull_in_voltage = calculator.calculate_pull_in_voltage(
         mask_params["proof_mass_size"],
         mask_params["spring_length"],
@@ -117,9 +123,11 @@ def create_consumer_accelerometer():
     )
     print(f"吸合电压: {pull_in_voltage:.2f} V")
     
-    # 阻尼比
+    # 阻尼比 - 传递实际计算的弹簧长度和宽度
     damping_ratio = calculator.calculate_damping_ratio(
         mask_params["proof_mass_size"],
+        mask_params["spring_length"],
+        mask_params["spring_width"],
         mask_params["gap"]
     )
     print(f"阻尼比: {damping_ratio:.3f}")
@@ -139,4 +147,4 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main() 
+    main()

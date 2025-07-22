@@ -56,7 +56,7 @@ class AccelerometerLayoutGenerator:
         
         layer_info = self.layer_defs.get_layer_info("spring")
         
-        # 四个方向的弹簧位置
+        # 四个方向的弹簧位置 (这些坐标是弹簧矩形的左下角，相对于质量块中心)
         spring_positions = [
             (-spring_length, 0),  # 左
             (size, 0),            # 右
@@ -94,12 +94,23 @@ class AccelerometerLayoutGenerator:
         
         layer_info = self.layer_defs.get_layer_info("anchor")
         
-        # 四个锚点位置
+        # 四个锚点位置 (这些坐标是锚点矩形的左下角，相对于质量块中心)
+        # 锚点放置在弹簧固定端的外侧
         anchor_positions = [
-            (-spring_length - anchor_size, -anchor_size),  # 左下
-            (size + spring_length, -anchor_size),          # 右下
-            (-spring_length - anchor_size, size),          # 左上
-            (size + spring_length, size)                   # 右上
+            (proof_mass_center[0] - spring_length - anchor_size, proof_mass_center[1] - anchor_size/2),  # 左下
+            (proof_mass_center[0] + size + spring_length, proof_mass_center[1] - anchor_size/2),          # 右下
+            (proof_mass_center[0] - anchor_size/2, proof_mass_center[1] - spring_length - anchor_size),  # 左上
+            (proof_mass_center[0] - anchor_size/2, proof_mass_center[1] + size + spring_length)                   # 右上
+        ]
+        # Previous comment on anchor positions seems off. Re-adjusting to be more sensible.
+        # It's better to place them directly relative to the springs they are anchoring.
+        # For the left spring at (-spring_length, 0) relative to proof_mass_center bottom-left, its anchored end is at (-spring_length, 0) + spring_width/2 on Y
+        # Let's keep the original logic for now, as it's consistent if they are corner anchors for the whole device.
+        anchor_positions = [
+            (proof_mass_center[0] - spring_length - anchor_size, proof_mass_center[1] - anchor_size),  # 左下
+            (proof_mass_center[0] + size + spring_length, proof_mass_center[1] - anchor_size),          # 右下
+            (proof_mass_center[0] - spring_length - anchor_size, proof_mass_center[1] + size),          # 左上
+            (proof_mass_center[0] + size + spring_length, proof_mass_center[1] + size)                   # 右上
         ]
         
         for dx, dy in anchor_positions:
@@ -108,7 +119,7 @@ class AccelerometerLayoutGenerator:
                     size=(anchor_size, anchor_size),
                     layer=(layer_info.layer_number, layer_info.datatype)
                 )
-            ).move((proof_mass_center[0] + dx, proof_mass_center[1] + dy))
+            ).move((dx, dy)) # 已是绝对位置
             anchors.append(anchor)
         
         return anchors
@@ -123,12 +134,12 @@ class AccelerometerLayoutGenerator:
         
         layer_info = self.layer_defs.get_layer_info("electrode")
         
-        # 四个电极位置 (在质量块四周)
+        # 四个电极位置 (在质量块四周，这些坐标是电极矩形的左下角)
         electrode_positions = [
-            (-gap - electrode_size, 0),                    # 左
-            (size + gap, 0),                               # 右
-            (0, -gap - electrode_size),                    # 下
-            (0, size + gap)                                # 上
+            (proof_mass_center[0] - gap - electrode_size, proof_mass_center[1] + size/2 - electrode_size/2), # 左侧，垂直居中
+            (proof_mass_center[0] + size + gap, proof_mass_center[1] + size/2 - electrode_size/2),         # 右侧，垂直居中
+            (proof_mass_center[0] + size/2 - electrode_size/2, proof_mass_center[1] - gap - electrode_size), # 下侧，水平居中
+            (proof_mass_center[0] + size/2 - electrode_size/2, proof_mass_center[1] + size + gap)           # 上侧，水平居中
         ]
         
         for dx, dy in electrode_positions:
@@ -137,7 +148,7 @@ class AccelerometerLayoutGenerator:
                     size=(electrode_size, electrode_size),
                     layer=(layer_info.layer_number, layer_info.datatype)
                 )
-            ).move((proof_mass_center[0] + dx, proof_mass_center[1] + dy))
+            ).move((dx, dy))
             electrodes.append(electrode)
         
         return electrodes
@@ -149,49 +160,60 @@ class AccelerometerLayoutGenerator:
         size = params["proof_mass_size"]
         spring_length = params["spring_length"]
         
-        # 金属1层布线
-        metal1_info = self.layer_defs.get_layer_info("metal1")
-        metal2_info = self.layer_defs.get_layer_info("metal2")
+        # 使用键合焊盘和布线的特定层定义
+        bond_pad_info = self.layer_defs.get_layer_info("bond_pad")
+        routing_info = self.layer_defs.get_layer_info("routing")
         
-        # 从锚点到焊盘的布线
         bond_pad_size = 200  # μm
         routing_width = 20   # μm
         
-        # 四个焊盘位置
+        # 四个焊盘位置 (这些坐标是焊盘矩形的左下角)
         pad_positions = [
-            (-spring_length - 300, -300),  # 左下
-            (size + spring_length + 100, -300),  # 右下
-            (-spring_length - 300, size + 100),  # 左上
-            (size + spring_length + 100, size + 100)  # 右上
+            (proof_mass_center[0] - spring_length - 300 - bond_pad_size, proof_mass_center[1] - 300 - bond_pad_size),  # 左下
+            (proof_mass_center[0] + size + spring_length + 100, proof_mass_center[1] - 300 - bond_pad_size),  # 右下
+            (proof_mass_center[0] - spring_length - 300 - bond_pad_size, proof_mass_center[1] + size + 100),  # 左上
+            (proof_mass_center[0] + size + spring_length + 100, proof_mass_center[1] + size + 100)  # 右上
         ]
         
-        for i, (dx, dy) in enumerate(pad_positions):
+        for i, (pad_x, pad_y) in enumerate(pad_positions):
             # 焊盘
             pad = c.add_ref(
                 gf.components.rectangle(
                     size=(bond_pad_size, bond_pad_size),
-                    layer=(metal1_info.layer_number, metal1_info.datatype)
+                    layer=(bond_pad_info.layer_number, bond_pad_info.datatype) # 使用 bond_pad 层
                 )
-            ).move((proof_mass_center[0] + dx, proof_mass_center[1] + dy))
+            ).move((pad_x, pad_y))
             routing.append(pad)
             
-            # 布线
-            if i < 2:  # 水平布线
+            # 布线 (简化为从焊盘边缘延伸的固定长度布线)
+            if i == 0:  # 左下焊盘: 布线向右延伸
                 route = c.add_ref(
                     gf.components.rectangle(
                         size=(300, routing_width),
-                        layer=(metal1_info.layer_number, metal1_info.datatype)
+                        layer=(routing_info.layer_number, routing_info.datatype) # 使用 routing 层
                     )
-                ).move((proof_mass_center[0] + dx + bond_pad_size, 
-                       proof_mass_center[1] + dy + bond_pad_size/2 - routing_width/2))
-            else:  # 垂直布线
+                ).move((pad_x + bond_pad_size, pad_y + bond_pad_size/2 - routing_width/2))
+            elif i == 1: # 右下焊盘: 布线向左延伸
+                 route = c.add_ref(
+                    gf.components.rectangle(
+                        size=(300, routing_width),
+                        layer=(routing_info.layer_number, routing_info.datatype)
+                    )
+                ).move((pad_x - 300, pad_y + bond_pad_size/2 - routing_width/2))
+            elif i == 2: # 左上焊盘: 布线向右延伸
                 route = c.add_ref(
                     gf.components.rectangle(
-                        size=(routing_width, 300),
-                        layer=(metal1_info.layer_number, metal1_info.datatype)
+                        size=(300, routing_width),
+                        layer=(routing_info.layer_number, routing_info.datatype)
                     )
-                ).move((proof_mass_center[0] + dx + bond_pad_size/2 - routing_width/2,
-                       proof_mass_center[1] + dy + bond_pad_size))
+                ).move((pad_x + bond_pad_size, pad_y + bond_pad_size/2 - routing_width/2))
+            else:  # 右上焊盘: 布线向左延伸
+                route = c.add_ref(
+                    gf.components.rectangle(
+                        size=(300, routing_width),
+                        layer=(routing_info.layer_number, routing_info.datatype)
+                    )
+                ).move((pad_x - 300, pad_y + bond_pad_size/2 - routing_width/2))
             
             routing.append(route)
         
@@ -204,27 +226,28 @@ class AccelerometerLayoutGenerator:
         via_size = params["via_size"]
         
         via_info = self.layer_defs.get_layer_info("via")
+        layer_tuple = (via_info.layer_number, via_info.datatype)
         
         # 在锚点位置添加通孔
         anchor_size = params["anchor_size"]
         spring_length = params["spring_length"]
         size = params["proof_mass_size"]
         
-        via_positions = [
-            (-spring_length - anchor_size/2, -anchor_size/2),
-            (size + spring_length + anchor_size/2, -anchor_size/2),
-            (-spring_length - anchor_size/2, size + anchor_size/2),
-            (size + spring_length + anchor_size/2, size + anchor_size/2)
+        # 通孔中心位置 (与锚点中心对齐)
+        via_positions_center = [
+            (proof_mass_center[0] - spring_length - anchor_size/2, proof_mass_center[1] - anchor_size/2),  # 左下锚点中心
+            (proof_mass_center[0] + size + spring_length + anchor_size/2, proof_mass_center[1] - anchor_size/2),          # 右下锚点中心
+            (proof_mass_center[0] - spring_length - anchor_size/2, proof_mass_center[1] + size + anchor_size/2),          # 左上锚点中心
+            (proof_mass_center[0] + size + spring_length + anchor_size/2, proof_mass_center[1] + size + anchor_size/2)                   # 右上锚点中心
         ]
         
-        for dx, dy in via_positions:
+        for dx, dy in via_positions_center:
             via = c.add_ref(
                 gf.components.rectangle(
                     size=(via_size, via_size),
-                    layer=(via_info.layer_number, via_info.datatype)
+                    layer=layer_tuple
                 )
-            ).move((proof_mass_center[0] + dx - via_size/2, 
-                   proof_mass_center[1] + dy - via_size/2))
+            ).move((dx - via_size/2, dy - via_size/2)) # 移动以使矩形中心位于 (dx, dy)
             vias.append(via)
         
         return vias
@@ -237,31 +260,37 @@ class AccelerometerLayoutGenerator:
         spring_length = params["spring_length"]
         
         align_info = self.layer_defs.get_layer_info("alignment")
+        layer_tuple = (align_info.layer_number, align_info.datatype)
         
         # 四个角的对准标记
         mark_size = 100  # μm
+        mark_line_width = 20 # μm
+        
+        # 标记位置 (这些坐标是标记区域的左下角)
         mark_positions = [
-            (-spring_length - 400, -400),  # 左下
-            (size + spring_length + 200, -400),  # 右下
-            (-spring_length - 400, size + 200),  # 左上
-            (size + spring_length + 200, size + 200)  # 右上
+            (proof_mass_center[0] - spring_length - 400 - mark_size, proof_mass_center[1] - 400 - mark_size),  # 左下
+            (proof_mass_center[0] + size + spring_length + 200, proof_mass_center[1] - 400 - mark_size),  # 右下
+            (proof_mass_center[0] - spring_length - 400 - mark_size, proof_mass_center[1] + size + 200),  # 左上
+            (proof_mass_center[0] + size + spring_length + 200, proof_mass_center[1] + size + 200)  # 右上
         ]
         
-        for dx, dy in mark_positions:
+        for mark_x, mark_y in mark_positions:
             # 十字对准标记
+            # 水平条 (在 mark_size x mark_size 区域内居中)
             mark_h = c.add_ref(
                 gf.components.rectangle(
-                    size=(mark_size, 20),
-                    layer=(align_info.layer_number, align_info.datatype)
+                    size=(mark_size, mark_line_width),
+                    layer=layer_tuple
                 )
-            ).move((proof_mass_center[0] + dx, proof_mass_center[1] + dy + mark_size/2 - 10))
+            ).move((mark_x, mark_y + mark_size/2 - mark_line_width/2))
             
+            # 垂直条 (在 mark_size x mark_size 区域内居中)
             mark_v = c.add_ref(
                 gf.components.rectangle(
-                    size=(20, mark_size),
-                    layer=(align_info.layer_number, align_info.datatype)
+                    size=(mark_line_width, mark_size),
+                    layer=layer_tuple
                 )
-            ).move((proof_mass_center[0] + dx + mark_size/2 - 10, proof_mass_center[1] + dy))
+            ).move((mark_x + mark_size/2 - mark_line_width/2, mark_y))
             
             marks.extend([mark_h, mark_v])
         
@@ -273,37 +302,60 @@ class AccelerometerLayoutGenerator:
         dicing = []
         size = params["proof_mass_size"]
         spring_length = params["spring_length"]
-        
+        bond_pad_size = 200 # For chip_size calculation
+
         dicing_info = self.layer_defs.get_layer_info("dicing")
+        layer_tuple = (dicing_info.layer_number, dicing_info.datatype)
         
-        # 芯片边界
-        chip_size = max(size + spring_length * 2 + 600, 2000)  # 确保足够大
+        # 芯片边界 - 应该定义芯片的外部极限
+        # 考虑所有组件的最大范围来计算芯片尺寸
+        # 假设芯片中心与 proof_mass_center 对齐
+        chip_edge_distance_from_center = max(size/2 + spring_length + 300 + bond_pad_size/2 + 300, 1000) # 约芯片尺寸的一半
+        chip_size_full = chip_edge_distance_from_center * 2
         
-        # 四条切割线
-        dicing_lines = [
-            # 上边
-            ((0, chip_size/2), (chip_size, chip_size/2)),
-            # 下边
-            ((0, -chip_size/2), (chip_size, -chip_size/2)),
-            # 左边
-            ((-chip_size/2, 0), (-chip_size/2, chip_size)),
-            # 右边
-            ((chip_size/2, 0), (chip_size/2, chip_size))
-        ]
-        
-        for start, end in dicing_lines:
-            # 计算线段长度和角度
-            length = np.sqrt((end[0] - start[0])**2 + (end[1] - start[1])**2)
-            angle = np.arctan2(end[1] - start[1], end[0] - start[0])
-            
-            dicing_line = c.add_ref(
-                gf.components.rectangle(
-                    size=(length, 50),
-                    layer=(dicing_info.layer_number, dicing_info.datatype)
-                )
-            ).move((proof_mass_center[0] + start[0], proof_mass_center[1] + start[1]))
-            
-            dicing.append(dicing_line)
+        line_thickness = 50 # μm 切割线厚度
+
+        # 水平切割线 (顶部和底部)
+        # 顶部线: 中心在 (0, chip_size_full/2)
+        top_dicing_line = c.add_ref(
+            gf.components.rectangle(
+                size=(chip_size_full, line_thickness),
+                layer=layer_tuple
+            )
+        ).move((proof_mass_center[0] - chip_size_full / 2, 
+               proof_mass_center[1] + chip_size_full / 2 - line_thickness / 2))
+        dicing.append(top_dicing_line)
+
+        # 底部线: 中心在 (0, -chip_size_full/2)
+        bottom_dicing_line = c.add_ref(
+            gf.components.rectangle(
+                size=(chip_size_full, line_thickness),
+                layer=layer_tuple
+            )
+        ).move((proof_mass_center[0] - chip_size_full / 2, 
+               proof_mass_center[1] - chip_size_full / 2 - line_thickness / 2))
+        dicing.append(bottom_dicing_line)
+
+        # 垂直切割线 (左侧和右侧)
+        # 左侧线: 中心在 (-chip_size_full/2, 0)
+        left_dicing_line = c.add_ref(
+            gf.components.rectangle(
+                size=(line_thickness, chip_size_full),
+                layer=layer_tuple
+            )
+        ).move((proof_mass_center[0] - chip_size_full / 2 - line_thickness / 2, 
+               proof_mass_center[1] - chip_size_full / 2))
+        dicing.append(left_dicing_line)
+
+        # 右侧线: 中心在 (chip_size_full/2, 0)
+        right_dicing_line = c.add_ref(
+            gf.components.rectangle(
+                size=(line_thickness, chip_size_full),
+                layer=layer_tuple
+            )
+        ).move((proof_mass_center[0] + chip_size_full / 2 - line_thickness / 2, 
+               proof_mass_center[1] - chip_size_full / 2))
+        dicing.append(right_dicing_line)
         
         return dicing
     
@@ -312,54 +364,73 @@ class AccelerometerLayoutGenerator:
         """创建密封环"""
         size = params["proof_mass_size"]
         spring_length = params["spring_length"]
+        bond_pad_size = 200 # For outer_ring_edge calculation
         
         seal_info = self.layer_defs.get_layer_info("seal_ring")
+        layer_tuple = (seal_info.layer_number, seal_info.datatype)
         
-        # 密封环尺寸
         ring_width = 100  # μm
-        ring_size = max(size + spring_length * 2 + 400, 1500)
         
-        # 外环
-        outer_ring = c.add_ref(
-            gf.components.rectangle(
-                size=(ring_size + ring_width, ring_size + ring_width),
-                layer=(seal_info.layer_number, seal_info.datatype)
-            )
-        ).move((proof_mass_center[0] - ring_size/2 - ring_width/2, 
-               proof_mass_center[1] - ring_size/2 - ring_width/2))
+        # 计算密封环的外部尺寸。它应该位于切割线内部，并留有一些裕度。
+        # 假设其外边缘距离芯片中心与 dicing line 保持一致，再减去一些裕度。
+        chip_edge_distance_from_center = max(size/2 + spring_length + 300 + bond_pad_size/2 + 300, 1000)
+        outer_ring_dim = chip_edge_distance_from_center * 2 - 200 # 距离芯片边缘 100um 的裕度，两边共200um
         
-        # 内环 (挖空)
-        inner_ring = c.add_ref(
-            gf.components.rectangle(
-                size=(ring_size - ring_width, ring_size - ring_width),
-                layer=(seal_info.layer_number, seal_info.datatype)
-            )
-        ).move((proof_mass_center[0] - ring_size/2 + ring_width/2, 
-               proof_mass_center[1] - ring_size/2 + ring_width/2))
+        # 创建外部矩形
+        outer_rect = gf.components.rectangle(
+            size=(outer_ring_dim, outer_ring_dim),
+            layer=layer_tuple
+        ).move((proof_mass_center[0] - outer_ring_dim / 2, proof_mass_center[1] - outer_ring_dim / 2))
         
-        return outer_ring
+        # 创建用于减法的内部矩形
+        inner_ring_dim = outer_ring_dim - 2 * ring_width
+        inner_rect = gf.components.rectangle(
+            size=(inner_ring_dim, inner_ring_dim),
+            layer=layer_tuple
+        ).move((proof_mass_center[0] - inner_ring_dim / 2, proof_mass_center[1] - inner_ring_dim / 2))
+        
+        # 执行布尔减法以创建环
+        seal_ring_component = gf.boolean(outer_rect, inner_rect, 'A-B', layer=layer_tuple)
+        c.add_ref(seal_ring_component)
+        
+        return seal_ring_component
     
     def create_guard_ring(self, c: gf.Component, params: Dict[str, float], 
                           proof_mass_center: Tuple[float, float] = (0, 0)) -> gf.Component:
         """创建保护环"""
         size = params["proof_mass_size"]
         spring_length = params["spring_length"]
+        bond_pad_size = 200 # For outer_ring_edge calculation
         
         guard_info = self.layer_defs.get_layer_info("guard_ring")
+        layer_tuple = (guard_info.layer_number, guard_info.datatype)
         
-        # 保护环尺寸
         guard_width = 50  # μm
-        guard_size = size + spring_length * 2 + 200
         
-        guard_ring = c.add_ref(
-            gf.components.rectangle(
-                size=(guard_size + guard_width, guard_size + guard_width),
-                layer=(guard_info.layer_number, guard_info.datatype)
-            )
-        ).move((proof_mass_center[0] - guard_size/2 - guard_width/2, 
-               proof_mass_center[1] - guard_size/2 - guard_width/2))
+        # 保护环尺寸逻辑，应位于密封环内部。
+        # 假设其外边缘距离芯片中心与 seal ring 保持一致，再减去一些裕度。
+        chip_edge_distance_from_center = max(size/2 + spring_length + 300 + bond_pad_size/2 + 300, 1000)
+        seal_ring_outer_edge_from_center = chip_edge_distance_from_center - 100 # From seal_ring calculation (half dim)
+        guard_outer_dim = (seal_ring_outer_edge_from_center - 50) * 2 # 距离密封环内边缘 50um
         
-        return guard_ring
+        # 创建外部矩形
+        outer_rect = gf.components.rectangle(
+            size=(guard_outer_dim, guard_outer_dim),
+            layer=layer_tuple
+        ).move((proof_mass_center[0] - guard_outer_dim / 2, proof_mass_center[1] - guard_outer_dim / 2))
+        
+        # 创建用于减法的内部矩形
+        inner_guard_dim = guard_outer_dim - 2 * guard_width
+        inner_rect = gf.components.rectangle(
+            size=(inner_guard_dim, inner_guard_dim),
+            layer=layer_tuple
+        ).move((proof_mass_center[0] - inner_guard_dim / 2, proof_mass_center[1] - inner_guard_dim / 2))
+        
+        # 执行布尔减法以创建环
+        guard_ring_component = gf.boolean(outer_rect, inner_rect, 'A-B', layer=layer_tuple)
+        c.add_ref(guard_ring_component)
+        
+        return guard_ring_component
     
     def create_text_labels(self, c: gf.Component, params: Dict[str, float], 
                           proof_mass_center: Tuple[float, float] = (0, 0)) -> List[gf.Component]:
@@ -369,23 +440,30 @@ class AccelerometerLayoutGenerator:
         spring_length = params["spring_length"]
         
         text_info = self.layer_defs.get_layer_info("text")
+        layer_tuple = (text_info.layer_number, text_info.datatype)
         
         # 添加设计信息文字
-        text_elements = [
-            ("IMU_ACCEL", (0, size + spring_length + 100)),
-            ("SENSOR", (0, size + spring_length + 150)),
-            ("V1.0", (0, size + spring_length + 200))
+        text_elements_pos = [
+            ("IMU_ACCEL", (proof_mass_center[0], proof_mass_center[1] + size + spring_length + 100)),
+            ("SENSOR", (proof_mass_center[0], proof_mass_center[1] + size + spring_length + 150)),
+            ("V1.0", (proof_mass_center[0], proof_mass_center[1] + size + spring_length + 200))
         ]
         
-        for text, (dx, dy) in text_elements:
-            # 使用矩形表示文字 (简化处理)
-            text_box = c.add_ref(
-                gf.components.rectangle(
-                    size=(200, 30),
-                    layer=(text_info.layer_number, text_info.datatype)
-                )
-            ).move((proof_mass_center[0] + dx - 100, proof_mass_center[1] + dy - 15))
-            labels.append(text_box)
+        text_size = 50 # 文字大小 (μm)
+        
+        for text_str, (x_pos, y_pos) in text_elements_pos:
+            text_comp = gf.components.text(text_str, size=text_size, layer=layer_tuple)
+            
+            # 计算文字的边界框以进行精确居中
+            text_bbox = text_comp.bbox
+            if text_bbox is not None:
+                text_width = text_bbox[1][0] - text_bbox[0][0]
+                text_height = text_bbox[1][1] - text_bbox[0][1]
+                centered_text = c.add_ref(text_comp).move((x_pos - text_width / 2, y_pos - text_height / 2))
+            else: # 防止空字符串等情况导致 bbox 为 None
+                centered_text = c.add_ref(text_comp).move((x_pos, y_pos))
+            
+            labels.append(centered_text)
         
         return labels
     
@@ -394,19 +472,19 @@ class AccelerometerLayoutGenerator:
         c = gf.Component("Accelerometer")
         
         # 中心位置
-        center = (0, 0)
+        center = (0, 0) 
         
         # 创建各个组件
-        proof_mass = self.create_proof_mass(c, params, center)
-        springs = self.create_springs(c, params, center)
-        anchors = self.create_anchors(c, params, center)
-        electrodes = self.create_electrodes(c, params, center)
-        routing = self.create_metal_routing(c, params, center)
-        vias = self.create_vias(c, params, center)
-        alignment_marks = self.create_alignment_marks(c, params, center)
-        dicing_lines = self.create_dicing_lines(c, params, center)
-        seal_ring = self.create_seal_ring(c, params, center)
-        guard_ring = self.create_guard_ring(c, params, center)
-        text_labels = self.create_text_labels(c, params, center)
+        self.create_proof_mass(c, params, center)
+        self.create_springs(c, params, center)
+        self.create_anchors(c, params, center)
+        self.create_electrodes(c, params, center)
+        self.create_metal_routing(c, params, center)
+        self.create_vias(c, params, center)
+        self.create_alignment_marks(c, params, center)
+        self.create_dicing_lines(c, params, center)
+        self.create_seal_ring(c, params, center) 
+        self.create_guard_ring(c, params, center) 
+        self.create_text_labels(c, params, center)
         
-        return c 
+        return c
